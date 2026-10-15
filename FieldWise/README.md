@@ -1,28 +1,17 @@
-# FieldWise — Copy-and-replace project
+# FieldWise — Web crop selection edition
 
-## Files
-- `src/App.jsx`: complete dashboard UI
-- `src/style.css`: responsive green theme
-- `src/main.jsx`: React entry point
-- `api/telemetry.js`: authenticated ESP32 ingestion endpoint
-- `api/latest.js`, `api/history.js`: dashboard endpoints
-- `api/_db.js`: server-only Supabase connection
-- `supabase/schema.sql`: database setup
-- `firmware/FieldWise_ESP32.ino`: original uploaded scratch firmware (unchanged)
+## Deployment
+1. Run **the entire updated** `supabase/schema.sql` in Supabase SQL Editor (also safe for an existing readings table).
+2. Upload this project to GitHub, import into Vercel as Vite (`npm run build`, output `dist`). Ensure deployment protection does not block ESP32.
+3. Set Vercel environment variables: `SUPABASE_URL`, `SUPABASE_SECRET_KEY`, `DEVICE_API_KEY`, `DASHBOARD_ADMIN_KEY`. Use different long random values for the last two. Redeploy.
+4. In `firmware/FieldWise_ESP32.ino` set `WIFI_SSID`, `WIFI_PASSWORD`, `API_URL`, `COMMAND_URL`, `DEVICE_API_KEY`. Both URLs must point to the same Vercel deployment.
+5. Install Arduino libraries: **DHT sensor library** by Adafruit, **Adafruit Unified Sensor**, and **ArduinoJson v7**. Upload to ESP32; Serial Monitor 115200.
+6. Open website, enter `DASHBOARD_ADMIN_KEY` in Remote crop selection and choose Rice/Wheat/Cotton/Tomato/Reset. ESP32 polls every ~10 seconds; telemetry uploads every ~20 seconds.
 
-## Setup
-1. Create a Supabase project and run `supabase/schema.sql` in SQL Editor.
-2. Upload project to a GitHub repository with `package.json` at repository root.
-3. Import repository into Vercel; use Vite framework, `npm run build`, output `dist`.
-4. Set Vercel environment variables: `SUPABASE_URL`, `SUPABASE_SECRET_KEY` (server-side secret), `DEVICE_API_KEY` (a long random value). Redeploy.
-5. In firmware replace `WIFI_SSID`, `WIFI_PASSWORD`, `API_URL` (`https://YOUR-DEPLOYMENT.vercel.app/api/telemetry`) and `DEVICE_API_KEY` (same as Vercel).
-6. Install Arduino DHT sensor library by Adafruit and Adafruit Unified Sensor, upload firmware and open Serial Monitor at 115200.
-7. Send `1` Rice, `2` Wheat, `3` Cotton, `4` Tomato, `0` Reset. Check for HTTP 201 in Serial Monitor.
-8. Open deployed website to view readings. Dashboard is read-only; it does not remotely operate the pump.
-
-## Security and safety
-- Never publish `SUPABASE_SECRET_KEY` or `DEVICE_API_KEY` in GitHub. The firmware copy has placeholders.
-- Current firmware uses `client.setInsecure()` for HTTPS: this disables server certificate validation. Replace with certificate verification for deployment beyond a supervised demo.
-- Test relay OFF behavior before attaching the pump; use a separate pump power supply and suitable driver. PIR senses motion, not continuous human presence.
-- Crop thresholds and soil ADC values are demonstration values and require calibration.
-- The API endpoints are publicly readable; avoid publishing personal or sensitive data in the telemetry. Add user authentication before making a private production dashboard.
+## Security / safety
+- Never commit real keys or Wi-Fi passwords. The admin key is entered into the dashboard at runtime, not bundled in JavaScript or browser storage. Protect it as a password; for production, implement real user login, CSRF protection, rate limiting and per-device authorization.
+- Supabase secret key stays only in Vercel. ESP32 uses its separate `DEVICE_API_KEY`.
+- The uploaded sketch uses `client.setInsecure()` as a supervised demonstration shortcut. Use verified HTTPS CA certificate and reliable time synchronization for real deployments.
+- Remote selection only changes crop; pump ON/OFF remains controlled locally with PIR motion and timeout lockout. Reset clears timeout lockout, so inspect pump before pressing Reset.
+- No display or physical crop buttons required. ESP32 needs Wi-Fi to receive a new crop command; if offline, it retains its last selected crop until reboot (then starts with no crop).
+- Do not expose telemetry publicly if it contains private data. Latest/history endpoints are public in this exhibition example.

@@ -16,6 +16,7 @@
 #include <WiFiClientSecure.h>
 #include <HTTPClient.h>
 #include <DHT.h>
+#include <ArduinoJson.h>
 
 // ================ WIFI / CLOUD =================
 
@@ -27,6 +28,10 @@ const char* API_URL =
   "https://YOUR-VERCEL-PROJECT.vercel.app/api/telemetry";
 
 const char* DEVICE_API_KEY = "YOUR_DEVICE_API_KEY";
+const char* COMMAND_URL = "https://YOUR-VERCEL-PROJECT.vercel.app/api/command";
+const unsigned long COMMAND_INTERVAL = 10000;
+unsigned long lastCommandTime = 0;
+long lastAppliedRevision = -1;
 
 // ================ PIN CONFIGURATION ================
 
@@ -205,23 +210,8 @@ void resetSystem() {
 
 // ================ SERIAL CROP SELECTION =============
 
-void readSerialCommands() {
-  while (Serial.available() > 0) {
-    char command = Serial.read();
-
-    if (command == '1') {
-      selectCrop(RICE);
-    } else if (command == '2') {
-      selectCrop(WHEAT);
-    } else if (command == '3') {
-      selectCrop(COTTON);
-    } else if (command == '4') {
-      selectCrop(TOMATO);
-    } else if (command == '0') {
-      resetSystem();
-    }
-  }
-}
+// Crop selection is now managed by the web dashboard, not Serial Monitor.
+void readSerialCommands() { while (Serial.available()) Serial.read(); }
 
 // ================ SOIL MOISTURE =====================
 
@@ -453,6 +443,33 @@ void uploadToCloud() {
   http.end();
 }
 
+// Poll server for desired crop. Never accept pump ON/OFF commands from cloud.
+void pollCropCommand() {
+ if (!cloudConfigured() || WiFi.status()!=WL_CONNECTED) return;
+ WiFiClientSecure client;
+ // DEMO ONLY: replace with verified root CA for real deployment.
+ client.setInsecure();
+ HTTPClient http; http.setTimeout(3500);
+ if(!http.begin(client,COMMAND_URL)) return;
+ http.addHeader("x-device-key",DEVICE_API_KEY);
+ int status=http.GET();
+ if(status==200){
+  JsonDocument doc;
+  DeserializationError err=deserializeJson(doc,http.getString());
+  if(!err && doc["crop_code"].is<int>() && doc["revision"].is<long>()){
+   int code=doc["crop_code"].as<int>();
+   long revision=doc["revision"].as<long>();
+   if(code>=0 && code<=4 && revision!=lastAppliedRevision){
+    // On initial boot, revision 0 represents default crop None.
+    if(code==0) resetSystem(); else selectCrop((Crop)code);
+    lastAppliedRevision=revision;
+    Serial.printf("Cloud crop command applied: %d, revision %ld\n",code,revision);
+   }
+  }
+ }else Serial.printf("Crop command HTTP status: %d\n",status);
+ http.end();
+}
+
 // ================ SETUP =============================
 
 void setup() {
@@ -487,11 +504,7 @@ void setup() {
   lastPumpOffTime = millis();
 
   Serial.println("\nSMART AGRICULTURE SYSTEM READY");
-  Serial.println("1 = Rice");
-  Serial.println("2 = Wheat");
-  Serial.println("3 = Cotton");
-  Serial.println("4 = Tomato");
-  Serial.println("0 = Reset / clear pump lockout");
+  Serial.println("Crop selection is controlled from the website.");
   Serial.println("Pump starts OFF.");
 }
 
@@ -522,6 +535,11 @@ void loop() {
   }
 
   maintainWiFi();
+
+  if(now - lastCommandTime >= COMMAND_INTERVAL){
+    lastCommandTime=now;
+    pollCropCommand();
+  }
 
   if (now - lastSensorTime >= SENSOR_INTERVAL) {
     lastSensorTime = now;
