@@ -1,0 +1,2 @@
+import {db,json} from './_db.js';
+export default async function handler(req,res){if(req.method!=='GET')return json(res,405,{error:'GET required'});try{const {data,error}=await db().from('sensor_readings').select('*').order('created_at',{ascending:false}).limit(40);if(error)throw error;return json(res,200,{readings:data||[]})}catch(e){console.error(e);return json(res,500,{error:'Could not load history'})}}

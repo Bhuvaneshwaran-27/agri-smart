@@ -1,0 +1,2 @@
+import {db,json} from './_db.js';
+export default async function handler(req,res){if(req.method!=='GET')return json(res,405,{error:'GET required'});try{const {data,error}=await db().from('sensor_readings').select('*').order('created_at',{ascending:false}).limit(1).maybeSingle();if(error)throw error;return json(res,200,{reading:data||null})}catch(e){console.error(e);return json(res,500,{error:'Could not load latest reading'})}}
